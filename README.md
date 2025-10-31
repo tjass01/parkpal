@@ -57,7 +57,7 @@ npx expo start --tunnel
 
 ## Team
 - Tejas Parasumanna  parasumanna@wisc.edu — tjass01
-- Jivesh Mehta- jmehta22@wisc.edu- Jivesh0703
+- Jivesh Mehta jmehta22@wisc.edu - Jivesh0703
 - Cole Niemann cjniemann@wisc.edu ColeNiemann
 - Sunghoon Lee slee2342@wisc.edu - leondevazel
 
