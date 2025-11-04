@@ -68,7 +68,7 @@ export default function ProfileScreen({ navigation }) {
         onPress: async () => {
           try {
             await signOut(auth);
-            navigation.replace('Login');
+            // navigation.replace('Login'); 삭제됨 - onAuthStateChanged가 자동 처리
           } catch (error) {
             Alert.alert('Error', error.message);
           }
@@ -112,7 +112,7 @@ export default function ProfileScreen({ navigation }) {
 
                 // Delete user account
                 await deleteUser(user);
-                navigation.replace('Login');
+                // navigation.replace('Login'); 삭제됨 - onAuthStateChanged가 자동 처리
               }
             } catch (error) {
               Alert.alert('Error', error.message);
