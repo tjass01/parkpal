@@ -1,0 +1,12 @@
+Wireframe and Natural User Feedback
+Wireframes: Add all screens (e.g. Login, Map View with parking pins, Report Spot, Notifications, Settings). Display arrows for screen navigation.
+Milestones
+Oct 27
+UI base screens filled in (log in, home map, report page). Firebase database and Firebase authentication skeleton.
+Nov 10
+Map integration with Google Maps API and live marker updates. Implement reporting flow and push notifications prototype.
+Nov 24
+Complete front-end to back-end integration, consistent real-time parking updates as well as testing Android/iOS platforms.
+Dec 08
+Final polish: bug fixes, UI refinements, performance improvements, and final presentation/demo preparation.
+
