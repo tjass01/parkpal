@@ -9,6 +9,7 @@ import LoginScreen from './screens/LoginScreen';
 import MapScreen from './screens/MapScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import NotificationsScreen from './screens/NotificationsScreen';
+import SettingsScreen from './screens/SettingScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -44,6 +45,15 @@ function MainTabs() {
         options={{
           tabBarIcon: ({ color, size }) => (
             <Text style={{ fontSize: size }}>👤</Text>
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="Settings"
+        component={SettingsScreen}
+        options={{
+          tabBarIcon: ({ color, size }) => (
+            <Text style={{ fontSize: size }}>⚙️</Text>
           ),
         }}
       />
