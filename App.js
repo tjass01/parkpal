@@ -8,6 +8,7 @@ import { auth } from './firebaseConfig';
 import LoginScreen from './screens/LoginScreen';
 import MapScreen from './screens/MapScreen';
 import ProfileScreen from './screens/ProfileScreen';
+import NotificationsScreen from './screens/NotificationsScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -31,6 +32,13 @@ function MainTabs() {
         }}
       />
       <Tab.Screen 
+  name="Notifications" 
+  component={NotificationsScreen}
+  options={{
+    tabBarIcon: ({ size }) => <Text style={{ fontSize: size }}>🔔</Text>,
+  }}
+/>
+      <Tab.Screen 
         name="Profile" 
         component={ProfileScreen}
         options={{
@@ -39,6 +47,8 @@ function MainTabs() {
           ),
         }}
       />
+    
+
     </Tab.Navigator>
   );
 }

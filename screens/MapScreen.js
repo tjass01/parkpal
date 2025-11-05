@@ -99,6 +99,12 @@ export default function MapScreen({ navigation }) {
                 },
                 trigger: null,
               });
+              const notifRef = ref(database, `users/${auth.currentUser.uid}/notifications`);
+push(notifRef, {
+  title: 'Spot Available Nearby',
+  body: 'A new parking spot just opened close to you.',
+  timestamp: Date.now(),
+});
               setNotifiedIds((prev) => new Set([...prev, r.id]));
             }
           }
