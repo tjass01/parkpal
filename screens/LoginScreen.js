@@ -1,13 +1,19 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
-import { auth } from '../firebaseConfig';
+import { auth,database } from '../firebaseConfig';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { 
+  ref,
+  set
+} from "firebase/database";
+
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
+  const user = auth.currentUser;
 
   const getErrorMessage = (errorCode) => {
     switch (errorCode) {
@@ -57,22 +63,30 @@ export default function LoginScreen({ navigation }) {
 
   const handleAuth = async () => {
     if (!validateInput()) return;
-
+  
     setLoading(true);
     try {
+      let userCred;
+  
       if (isLogin) {
-        await signInWithEmailAndPassword(auth, email, password);
+        userCred = await signInWithEmailAndPassword(auth, email, password);
       } else {
-        await createUserWithEmailAndPassword(auth, email, password);
+        userCred = await createUserWithEmailAndPassword(auth, email, password);
         Alert.alert('Success', 'Account created successfully!');
       }
+  
+      const uid = userCred.user.uid;  
+      await set(ref(database, `users/${uid}/lastLogin`), Date.now());
+  
+      setLoading(false);
+  
     } catch (error) {
       const errorMessage = getErrorMessage(error.code);
       Alert.alert('Error', errorMessage);
-    } finally {
       setLoading(false);
     }
   };
+  
 
   return (
     <KeyboardAvoidingView 

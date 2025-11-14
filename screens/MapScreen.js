@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, StyleSheet, Text, TouchableOpacity, Modal, Alert } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import { database, auth } from '../firebaseConfig';
-import { ref, push, onValue, serverTimestamp, update, remove, get } from 'firebase/database';
+import { ref, push, onValue, serverTimestamp, update, remove, get, set } from 'firebase/database';
+import { useRoute, useIsFocused } from '@react-navigation/native';
 
-// --- Configure Notification Behavior ---
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -15,56 +15,68 @@ Notifications.setNotificationHandler({
   }),
 });
 
-// --- Distance Helper (km) ---
 function getDistance(lat1, lon1, lat2, lon2) {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
   const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.sin(dLat / 2) ** 2 +
     Math.cos(lat1 * Math.PI / 180) *
       Math.cos(lat2 * Math.PI / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
+      Math.sin(dLon / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 export default function MapScreen({ navigation }) {
   const [region, setRegion] = useState(null);
-  const [reportModalVisible, setReportModalVisible] = useState(false);
   const [parkingReports, setParkingReports] = useState([]);
-  const [notifiedIds, setNotifiedIds] = useState(new Set());
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [radiusModalVisible, setRadiusModalVisible] = useState(false);
 
-  // 1️⃣ Load user notification preference
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [radius, setRadius] = useState(0.3); // default 300m
+  const [notifiedIds, setNotifiedIds] = useState(new Set());
+
+  const route = useRoute();
+  const markerId = route.params?.markerId;
+
+  const mapRef = useRef(null);
+  const [mapReady, setMapReady] = useState(false);
+  const isFocused = useIsFocused();
+
+  const [lastCenteredMarkerId, setLastCenteredMarkerId] = useState(null);
+  const [initialCentered, setInitialCentered] = useState(false);
+
   useEffect(() => {
     const user = auth.currentUser;
     if (!user) return;
-    const prefRef = ref(database, `users/${user.uid}/notificationsEnabled`);
-    get(prefRef).then((snapshot) => {
-      if (snapshot.exists()) setNotificationsEnabled(snapshot.val());
-      else setNotificationsEnabled(true);
+
+    get(ref(database, `users/${user.uid}/radius`)).then(snap => {
+      if (snap.exists()) setRadius(snap.val());
+    });
+
+    get(ref(database, `users/${user.uid}/notificationsEnabled`)).then(snap => {
+      if (snap.exists()) setNotificationsEnabled(snap.val());
     });
   }, []);
 
-  // 2️⃣ Request notification permission
   useEffect(() => {
     (async () => {
-      const { status } = await Notifications.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Enable notifications to get parking alerts!');
+      const notif = await Notifications.requestPermissionsAsync();
+      const loc = await Location.requestForegroundPermissionsAsync();
+
+      if (notif.status !== 'granted') {
+        Alert.alert('Permission needed', 'Enable notifications for parking alerts.');
+      }
+
+      if (loc.status !== 'granted') {
+        Alert.alert('Location is required.');
       }
     })();
   }, []);
 
-  // 3️⃣ Get user location
   useEffect(() => {
     (async () => {
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission denied', 'Location access is required.');
-        return;
-      }
       const loc = await Location.getCurrentPositionAsync({});
       setRegion({
         latitude: loc.coords.latitude,
@@ -75,92 +87,85 @@ export default function MapScreen({ navigation }) {
     })();
   }, []);
 
-  // 4️⃣ Listen for parking updates and trigger notifications if nearby
+  useEffect(() => {
+    if (!mapReady || !region || initialCentered) return;
+    mapRef.current?.animateToRegion(region, 800);
+    setInitialCentered(true);
+  }, [mapReady, region, initialCentered]);
+
   useEffect(() => {
     const reportsRef = ref(database, 'parkingReports');
-    const unsubscribe = onValue(reportsRef, async (snapshot) => {
+    const unsubscribe = onValue(reportsRef, async snapshot => {
       const data = snapshot.val() || {};
-      const parsed = Object.keys(data).map((key) => ({
-        id: key,
-        ...data[key],
-      }));
-      setParkingReports(parsed);
+      const arr = Object.keys(data).map(id => ({ id, ...data[id] }));
+      setParkingReports(arr);
 
-      // Only notify if user enabled notifications
-      if (region && notificationsEnabled) {
-        parsed.forEach(async (r) => {
-          if (r.isAvailable && !notifiedIds.has(r.id)) {
-            const dist = getDistance(region.latitude, region.longitude, r.latitude, r.longitude);
-            if (dist < 0.3) { // within 300 meters
-              await Notifications.scheduleNotificationAsync({
-                content: {
-                  title: '🚗 Spot Available Nearby!',
-                  body: 'A new parking spot just opened close to you.',
-                },
-                trigger: null,
-              });
-              const notifRef = ref(database, `users/${auth.currentUser.uid}/notifications`);
-push(notifRef, {
-  title: 'Spot Available Nearby',
-  body: 'A new parking spot just opened close to you.',
-  timestamp: Date.now(),
-});
-              setNotifiedIds((prev) => new Set([...prev, r.id]));
-            }
-          }
-        });
-      }
+      if (!region || !notificationsEnabled) return;
+
+      arr.forEach(async r => {
+        if (!r.isAvailable || notifiedIds.has(r.id)) return;
+
+        const dist = getDistance(region.latitude, region.longitude, r.latitude, r.longitude);
+
+        if (dist < radius) {
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: '🚗 New Parking Spot',
+              body: 'A new parking spot opened near you!',
+              data: { markerId: r.id },
+            },
+            trigger: null,
+          });
+
+          const user = auth.currentUser;
+          push(ref(database, `users/${user.uid}/notifications`), {
+            title: 'Parking Spot Nearby',
+            body: 'A new spot opened near you.',
+            markerId: r.id,
+            timestamp: Date.now(),
+          });
+
+          setNotifiedIds(prev => new Set([...prev, r.id]));
+        }
+      });
     });
     return () => unsubscribe();
-  }, [region, notificationsEnabled, notifiedIds]);
+  }, [region, notificationsEnabled, notifiedIds, radius]);
 
-  // 5️⃣ Report a new spot
-  const reportParking = async (available) => {
-    if (!region) {
-      Alert.alert('Error', 'Location not available');
-      return;
-    }
-    try {
-      const reportsRef = ref(database, 'parkingReports');
-      await push(reportsRef, {
-        latitude: region.latitude,
-        longitude: region.longitude,
-        isAvailable: available,
-        timestamp: serverTimestamp(),
-      });
-      setReportModalVisible(false);
-      Alert.alert('Reported', `Marked as ${available ? 'available' : 'unavailable'}`);
-    } catch (e) {
-      Alert.alert('Error', e.message);
-    }
-  };
+  useEffect(() => {
+    if (!mapReady || !markerId || !parkingReports.length || !isFocused) return;
+    if (lastCenteredMarkerId === markerId) return;
 
-  // 6️⃣ Toggle or delete marker
-  const handleMarkerPress = (id, currentStatus) => {
-    Alert.alert(
-      'Modify Parking Spot',
-      'What would you like to do?',
-      [
-        {
-          text: currentStatus ? 'Mark Unavailable' : 'Mark Available',
-          onPress: async () => {
-            const reportRef = ref(database, `parkingReports/${id}`);
-            await update(reportRef, { isAvailable: !currentStatus });
-          },
-        },
-        {
-          text: 'Delete Marker',
-          style: 'destructive',
-          onPress: async () => {
-            const reportRef = ref(database, `parkingReports/${id}`);
-            await remove(reportRef);
-            Alert.alert('Deleted', 'Marker removed from map.');
-          },
-        },
-        { text: 'Cancel', style: 'cancel' },
-      ]
+    const target = parkingReports.find(r => r.id === markerId);
+    if (!target) return;
+
+    mapRef.current?.animateToRegion(
+      {
+        latitude: target.latitude,
+        longitude: target.longitude,
+        latitudeDelta: 0.005,
+        longitudeDelta: 0.005,
+      },
+      800
     );
+
+    setLastCenteredMarkerId(markerId);
+  }, [markerId, parkingReports, mapReady, isFocused, lastCenteredMarkerId]);
+
+  const reportParking = async (available) => {
+    if (!region) return;
+
+    await push(ref(database, 'parkingReports'), {
+      latitude: region.latitude,
+      longitude: region.longitude,
+      isAvailable: available,
+      timestamp: serverTimestamp(),
+    });
+
+    setReportModalVisible(false);
+    Alert.alert('Thanks!', `Spot marked as ${available ? 'available' : 'unavailable'}.`);
   };
+
 
   if (!region) {
     return (
@@ -173,29 +178,45 @@ push(notifRef, {
   return (
     <View style={styles.container}>
       <MapView
+        ref={mapRef}
         style={styles.map}
-        region={region}
+        showsUserLocation
+        showsCompass
+        onMapReady={() => setMapReady(true)}
         onRegionChangeComplete={setRegion}
-        showsUserLocation={true}
-        showsCompass={true}
       >
-        {parkingReports.map((r) => (
+        {parkingReports.map(r => (
           <Marker
             key={r.id}
             coordinate={{ latitude: r.latitude, longitude: r.longitude }}
             pinColor={r.isAvailable ? 'green' : 'red'}
-            title={r.isAvailable ? 'Parking Available' : 'Parking Unavailable'}
-            onPress={() => handleMarkerPress(r.id, r.isAvailable)}
+            title={r.isAvailable ? 'Available' : 'Unavailable'}
+            description="Tap to modify or delete"
+            onPress={() =>
+              Alert.alert('Modify Spot', '', [
+                {
+                  text: r.isAvailable ? 'Mark Unavailable' : 'Mark Available',
+                  onPress: () =>
+                    update(ref(database, `parkingReports/${r.id}`), {
+                      isAvailable: !r.isAvailable,
+                    }),
+                },
+                {
+                  text: 'Delete',
+                  style: 'destructive',
+                  onPress: () => remove(ref(database, `parkingReports/${r.id}`)),
+                },
+                { text: 'Cancel' },
+              ])
+            }
           />
         ))}
       </MapView>
 
-      {/* Crosshair */}
       <View style={styles.crosshair}>
         <Text style={{ fontSize: 28 }}>📍</Text>
       </View>
 
-      {/* Buttons */}
       <TouchableOpacity
         style={styles.profileButton}
         onPress={() => navigation.navigate('Profile')}
@@ -203,33 +224,71 @@ push(notifRef, {
         <Text style={styles.profileText}>👤</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={styles.reportButton}
-        onPress={() => setReportModalVisible(true)}
-      >
+      <TouchableOpacity style={styles.reportButton} onPress={() => setReportModalVisible(true)}>
         <Text style={styles.reportText}>Report</Text>
       </TouchableOpacity>
 
-      {/* Report Modal */}
+      <TouchableOpacity
+        style={styles.radiusButton}
+        onPress={() => setRadiusModalVisible(true)}
+      >
+        <Text style={styles.radiusText}>⚙️ Radius</Text>
+      </TouchableOpacity>
+
+      <Modal visible={radiusModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Notification Radius</Text>
+
+            {[0.1, 0.2, 0.3, 0.5, 1.0].map(v => (
+              <TouchableOpacity
+                key={v}
+                style={[styles.modalBtn, radius === v ? styles.greenBtn : styles.redBtn]}
+                onPress={() => {
+                  const user = auth.currentUser;
+                  setRadius(v);
+                  set(ref(database, `users/${user.uid}/radius`), v);
+                  setRadiusModalVisible(false);
+                }}
+              >
+                <Text style={styles.btnText}>
+                  {v < 1 ? `${v * 1000} m` : '1 km'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+
+            <TouchableOpacity
+              onPress={() => setRadiusModalVisible(false)}
+              style={styles.cancelBtn}
+            >
+              <Text style={styles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <Modal visible={reportModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Report Parking Status</Text>
+            <Text style={styles.modalTitle}>Report Parking</Text>
             <Text style={styles.locationText}>
-              Selected: {region.latitude.toFixed(4)}, {region.longitude.toFixed(4)}
+              {region.latitude.toFixed(4)}, {region.longitude.toFixed(4)}
             </Text>
+
             <TouchableOpacity
               style={[styles.modalBtn, styles.greenBtn]}
               onPress={() => reportParking(true)}
             >
-              <Text style={styles.btnText}>Parking Available ✓</Text>
+              <Text style={styles.btnText}>Available ✓</Text>
             </TouchableOpacity>
+
             <TouchableOpacity
               style={[styles.modalBtn, styles.redBtn]}
               onPress={() => reportParking(false)}
             >
-              <Text style={styles.btnText}>Parking Unavailable ✗</Text>
+              <Text style={styles.btnText}>Unavailable ✗</Text>
             </TouchableOpacity>
+
             <TouchableOpacity
               onPress={() => setReportModalVisible(false)}
               style={styles.cancelBtn}
@@ -279,7 +338,25 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   reportText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
+  radiusButton: {
+    position: 'absolute',
+    bottom: 100,
+    right: 20,
+    backgroundColor: '#fff',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 30,
+    elevation: 5,
+  },
+  radiusText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
   modalContent: {
     backgroundColor: 'white',
     borderTopLeftRadius: 20,
@@ -288,9 +365,8 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   modalTitle: { fontSize: 22, fontWeight: 'bold', textAlign: 'center', marginBottom: 10 },
-  locationText: { fontSize: 14, color: '#666', textAlign: 'center', marginBottom: 15 },
+  locationText: { textAlign: 'center', marginBottom: 15, color: '#666' },
   modalBtn: {
-    width: '100%',
     padding: 18,
     borderRadius: 10,
     marginVertical: 6,
@@ -299,6 +375,6 @@ const styles = StyleSheet.create({
   greenBtn: { backgroundColor: '#4CAF50' },
   redBtn: { backgroundColor: '#F44336' },
   btnText: { color: 'white', fontSize: 18, fontWeight: 'bold' },
-  cancelBtn: { marginTop: 10, alignItems: 'center' },
+  cancelBtn: { alignItems: 'center', marginTop: 10 },
   cancelText: { fontSize: 16, color: '#555' },
 });

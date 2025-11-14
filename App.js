@@ -10,6 +10,7 @@ import MapScreen from './screens/MapScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import NotificationsScreen from './screens/NotificationsScreen';
 import SettingsScreen from './screens/SettingScreen';
+import * as Notifications from "expo-notifications";
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -66,6 +67,22 @@ function MainTabs() {
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const subscription = Notifications.addNotificationResponseReceivedListener(
+      response => {
+        const markerId = response.notification.request.content.data?.markerId;
+
+        if (markerId) {
+          navigationRef.current?.navigate("Map", { markerId });
+        }
+      }
+    );
+
+    return () => subscription.remove();
+  }, []);
+
+  
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
