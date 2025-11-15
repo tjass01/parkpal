@@ -8,23 +8,13 @@ import {
   ScrollView,
   StyleSheet,
   Alert,
+  SafeAreaView,
 } from 'react-native';
 
 export default function SettingsScreen() {
-
-  // TODO add local storage functionality to save favs
-  // TODO hook up setting switches to permissions
-  // TODO when saving locations ensure lng lat are saved as to connect with a marker on map
-  // TODO remove notifications switch from profile screen, discuss with partner due to database changes
-
   const [pushEnabled, setPushEnabled] = useState(false);
   const [spotAlertEnabled, setSpotAlertEnabled] = useState(false);
-
-  // set fav lots; Engineering Hall and Union South for Demo UI
-  const [favorites, setFavorites] = useState([
-    'Engineering Hall',
-    'Union South',
-  ]);
+  const [favorites, setFavorites] = useState(['Engineering Hall', 'Union South']);
   const [newLot, setNewLot] = useState('');
   const [adding, setAdding] = useState(false);
 
@@ -42,113 +32,119 @@ export default function SettingsScreen() {
     setAdding(false);
   };
 
-  // remove lot from favs
   const removeFavorite = (name) => {
     setFavorites(favorites.filter((lot) => lot !== name));
   };
 
   return (
-    <ScrollView style={styles.container}>
+    <SafeAreaView style={styles.safeContainer}>
+      <ScrollView contentContainerStyle={styles.container}>
+        {/* Header */}
+        <Text style={styles.header}>⚙️ Settings</Text>
 
-      {/* header */}
-      <View style={styles.header}>
-        <Text style={styles.headerText}>Settings</Text>
-      </View>
+        {/* Notifications Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Notifications</Text>
 
-      {/* notifications  */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Notifications</Text>
-
-        {/* push */}
-        <View style={styles.row}>
-          <Text style={styles.label}>Push Notifications</Text>
-          <Switch
-            value={pushEnabled}
-            onValueChange={setPushEnabled}
-          />
-        </View>
-
-        {/* spot opened alert */}
-        <View style={styles.row}>
-          <Text style={styles.label}>Spot Opened Alerts</Text>
-          <Switch
-            value={spotAlertEnabled}
-            onValueChange={setSpotAlertEnabled}
-          />
-        </View>
-      </View>
-
-      {/* location permissions */}
-      
-
-      {/* favorite lots */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>FAVORITE LOTS</Text>
-
-        {
-        favorites.map((lot) => (
-          <View key={lot} style={styles.tag}>
-            <Text style={styles.tagText}>{lot}</Text>
-            <TouchableOpacity onPress={() => removeFavorite(lot)}>
-              <Text style={styles.remove}>×</Text>
-            </TouchableOpacity>
-          </View>
-        ))}
-
-        {
-        adding ? (
-          <View style={styles.addInputContainer}>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter lot name"
-              value={newLot}
-              onChangeText={setNewLot}
+          <View style={styles.row}>
+            <Text style={styles.label}>Push Notifications</Text>
+            <Switch
+              value={pushEnabled}
+              onValueChange={setPushEnabled}
+              trackColor={{ false: '#ccc', true: '#2196F3' }}
+              thumbColor={pushEnabled ? '#fff' : '#f4f3f4'}
             />
-            <TouchableOpacity style={styles.addConfirmBtn} onPress={addFavorite}>
-              <Text style={styles.addButtonText}>Add</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setAdding(false)}>
-              <Text style={styles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
           </View>
-        ) : (
-          <TouchableOpacity
-            style={styles.addButton}
-            onPress={() => setAdding(true)}
-          >
-            <Text style={styles.addLotText}>+ Add Favorite Lot</Text>
-          </TouchableOpacity>
-        )}
 
-      </View>
-    </ScrollView>
+          <View style={styles.row}>
+            <Text style={styles.label}>Spot Opened Alerts</Text>
+            <Switch
+              value={spotAlertEnabled}
+              onValueChange={setSpotAlertEnabled}
+              trackColor={{ false: '#ccc', true: '#2196F3' }}
+              thumbColor={spotAlertEnabled ? '#fff' : '#f4f3f4'}
+            />
+          </View>
+        </View>
+
+        {/* Favorite Lots Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Favorite Lots</Text>
+
+          {favorites.map((lot) => (
+            <View key={lot} style={styles.tag}>
+              <Text style={styles.tagText}>{lot}</Text>
+              <TouchableOpacity onPress={() => removeFavorite(lot)}>
+                <Text style={styles.remove}>×</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+
+          {adding ? (
+            <View style={styles.addInputContainer}>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter lot name"
+                placeholderTextColor="#888"
+                value={newLot}
+                onChangeText={setNewLot}
+              />
+              <TouchableOpacity style={styles.addConfirmBtn} onPress={addFavorite}>
+                <Text style={styles.addButtonText}>Add</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setAdding(false)}>
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={styles.addButton}
+              onPress={() => setAdding(true)}
+            >
+              <Text style={styles.addLotText}>+ Add Favorite Lot</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Footer */}
+        <Text style={styles.footer}>Version 1.0 • ParkPal Team</Text>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
-
 const styles = StyleSheet.create({
-  container: {
+  safeContainer: {
     flex: 1,
-    padding: 20,
-    backgroundColor: '#fff',
+    backgroundColor: '#f8f9fa',
+  },
+  container: {
+    padding: 25,
+    paddingBottom: 40,
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  headerText: {
-    fontSize: 20,
+    fontSize: 26,
     fontWeight: 'bold',
+    color: '#2196F3',
+    textAlign: 'center',
+    marginBottom: 25,
   },
   section: {
-    marginBottom: 32,
+    backgroundColor: '#fff',
+    padding: 20,
+    borderRadius: 15,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
   },
   sectionTitle: {
-    fontSize: 12,
+    fontSize: 14,
     color: '#777',
-    marginBottom: 8,
+    fontWeight: '600',
+    marginBottom: 12,
+    textTransform: 'uppercase',
   },
   row: {
     flexDirection: 'row',
@@ -158,41 +154,44 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 16,
+    color: '#333',
   },
   tag: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
+    borderColor: '#ddd',
+    borderRadius: 10,
     paddingVertical: 10,
     paddingHorizontal: 12,
     marginBottom: 10,
   },
   tagText: {
     fontSize: 16,
+    color: '#000',
   },
   remove: {
-    fontSize: 20,
+    fontSize: 22,
     color: '#888',
   },
   addButton: {
     borderWidth: 1,
     borderStyle: 'dashed',
     borderColor: '#aaa',
-    borderRadius: 8,
-    paddingVertical: 12,
+    borderRadius: 10,
+    paddingVertical: 14,
     alignItems: 'center',
+    marginTop: 5,
   },
-  addButtonText: {
+  addLotText: {
     fontSize: 16,
-    color: '#FFFFFF',
+    color: '#666',
   },
   addInputContainer: {
     borderWidth: 1,
     borderColor: '#ccc',
-    borderRadius: 8,
+    borderRadius: 10,
     padding: 12,
     marginBottom: 10,
   },
@@ -200,25 +199,34 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderColor: '#ddd',
     marginBottom: 10,
-    paddingVertical: 6,
+    paddingVertical: 8,
     fontSize: 16,
+    color: '#000',
   },
   addConfirmBtn: {
     backgroundColor: '#2196F3',
-    padding: 10,
-    borderRadius: 8,
+    padding: 12,
+    borderRadius: 10,
     alignItems: 'center',
     marginBottom: 6,
   },
+  addButtonText: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
   cancelText: {
     backgroundColor: '#F44336',
-    padding: 10,
-    borderRadius: 8,
+    padding: 12,
+    borderRadius: 10,
     textAlign: 'center',
     color: '#FFFFFF',
+    fontWeight: '600',
   },
-  addLotText:{
-    fontSize:16,
-    color: '#666'
-  }
+  footer: {
+    textAlign: 'center',
+    color: '#999',
+    fontSize: 12,
+    marginTop: 10,
+  },
 });

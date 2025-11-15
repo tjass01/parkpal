@@ -16,7 +16,7 @@ Notifications.setNotificationHandler({
 });
 
 function getDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371;
+  const R = 3958.8; // Earth radius in MILES
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
   const a =
@@ -24,8 +24,9 @@ function getDistance(lat1, lon1, lat2, lon2) {
     Math.cos(lat1 * Math.PI / 180) *
       Math.cos(lat2 * Math.PI / 180) *
       Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)); // returns miles
 }
+
 
 export default function MapScreen({ navigation }) {
   const [region, setRegion] = useState(null);
@@ -36,6 +37,8 @@ export default function MapScreen({ navigation }) {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [radius, setRadius] = useState(0.3); // default 300m
   const [notifiedIds, setNotifiedIds] = useState(new Set());
+
+  const prevMarkerIdsRef = useRef(new Set());
 
   const route = useRoute();
   const markerId = route.params?.markerId;
@@ -94,43 +97,69 @@ export default function MapScreen({ navigation }) {
   }, [mapReady, region, initialCentered]);
 
   useEffect(() => {
-    const reportsRef = ref(database, 'parkingReports');
-    const unsubscribe = onValue(reportsRef, async snapshot => {
-      const data = snapshot.val() || {};
-      const arr = Object.keys(data).map(id => ({ id, ...data[id] }));
-      setParkingReports(arr);
+  const reportsRef = ref(database, 'parkingReports');
+  const unsubscribe = onValue(reportsRef, async snapshot => {
+    const data = snapshot.val() || {};
+    const arr = Object.keys(data).map(id => ({ id, ...data[id] }));
+    setParkingReports(arr);
 
-      if (!region || !notificationsEnabled) return;
+    if (!region || !notificationsEnabled) return;
 
-      arr.forEach(async r => {
-        if (!r.isAvailable || notifiedIds.has(r.id)) return;
+    // ✅ handle each report safely
+    for (const r of arr) {
+      if (!r.isAvailable) continue;
 
-        const dist = getDistance(region.latitude, region.longitude, r.latitude, r.longitude);
+      // ✅ Skip if we've already handled this marker
+      if (prevMarkerIdsRef.current.has(r.id)) continue;
 
-        if (dist < radius) {
-          await Notifications.scheduleNotificationAsync({
-            content: {
-              title: '🚗 New Parking Spot',
-              body: 'A new parking spot opened near you!',
-              data: { markerId: r.id },
-            },
-            trigger: null,
-          });
+      // ✅ Mark as seen immediately (prevents double fire)
+      prevMarkerIdsRef.current.add(r.id);
 
-          const user = auth.currentUser;
-          push(ref(database, `users/${user.uid}/notifications`), {
+      const dist = getDistance(region.latitude, region.longitude, r.latitude, r.longitude);
+
+      if (dist < radius) {
+        // ✅ Schedule a single push notification
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: '🚗 Parking Spot Detected',
+            body:
+              r.userId === auth.currentUser?.uid
+                ? 'You reported this spot.'
+                : 'A new parking spot opened near you!',
+            data: { markerId: r.id },
+          },
+          trigger: null,
+        });
+
+        // ✅ Add to user's notifications in Firebase (once)
+        const user = auth.currentUser;
+        const notifRef = ref(database, `users/${user.uid}/notifications`);
+        const existing = await get(notifRef);
+        let alreadyNotified = false;
+
+        if (existing.exists()) {
+          const data = existing.val();
+          alreadyNotified = Object.values(data).some(n => n.markerId === r.id);
+        }
+
+        if (!alreadyNotified) {
+          await push(notifRef, {
             title: 'Parking Spot Nearby',
-            body: 'A new spot opened near you.',
+            body:
+              r.userId === user.uid
+                ? 'You reported this spot.'
+                : 'A new spot opened near you.',
             markerId: r.id,
             timestamp: Date.now(),
           });
-
-          setNotifiedIds(prev => new Set([...prev, r.id]));
         }
-      });
-    });
-    return () => unsubscribe();
-  }, [region, notificationsEnabled, notifiedIds, radius]);
+      }
+    }
+  });
+
+  return () => unsubscribe();
+}, [region, notificationsEnabled, notifiedIds, radius]);
+
 
   useEffect(() => {
     if (!mapReady || !markerId || !parkingReports.length || !isFocused) return;
@@ -153,18 +182,60 @@ export default function MapScreen({ navigation }) {
   }, [markerId, parkingReports, mapReady, isFocused, lastCenteredMarkerId]);
 
   const reportParking = async (available) => {
-    if (!region) return;
+  const user = auth.currentUser;
+  if (!user) return;
 
-    await push(ref(database, 'parkingReports'), {
-      latitude: region.latitude,
-      longitude: region.longitude,
-      isAvailable: available,
-      timestamp: serverTimestamp(),
-    });
+  // 🧭 Get user's current GPS location
+  const currentLoc = await Location.getCurrentPositionAsync({});
+  const userLat = currentLoc.coords.latitude;
+  const userLon = currentLoc.coords.longitude;
 
-    setReportModalVisible(false);
-    Alert.alert('Thanks!', `Spot marked as ${available ? 'available' : 'unavailable'}.`);
+  // 🧮 Distance between map center and your real location
+  const dist = getDistance(
+    region.latitude,
+    region.longitude,
+    userLat,
+    userLon
+  );
+
+  // 🚫 Prevent reporting if marker is too far from your current position
+  if (dist > 0.5) {
+    Alert.alert(
+      'Out of range',
+      'You can only report parking spots within 0.5 miles of your current location.'
+    );
+    return;
+  }
+
+  // ✅ Add parking report to database
+  const reportRef = push(ref(database, 'parkingReports'));
+  await set(reportRef, {
+    latitude: region.latitude,
+    longitude: region.longitude,
+    isAvailable: available,
+    timestamp: serverTimestamp(),
+    userId: user.uid,
+  });
+
+  // ✅ Update lifetime analytics (only increment, never decrease)
+  const analyticsRef = ref(database, `users/${user.uid}/analytics`);
+  const snapshot = await get(analyticsRef);
+  const prev = snapshot.exists()
+    ? snapshot.val()
+    : { total: 0, available: 0, unavailable: 0 };
+
+  const updated = {
+    total: (prev.total || 0) + 1,
+    available: (prev.available || 0) + (available ? 1 : 0),
+    unavailable: (prev.unavailable || 0) + (!available ? 1 : 0),
   };
+
+  await set(analyticsRef, updated);
+
+  setReportModalVisible(false);
+  Alert.alert('Thanks!', `Spot marked as ${available ? 'available' : 'unavailable'}.`);
+};
+
 
 
   if (!region) {
@@ -192,23 +263,37 @@ export default function MapScreen({ navigation }) {
             pinColor={r.isAvailable ? 'green' : 'red'}
             title={r.isAvailable ? 'Available' : 'Unavailable'}
             description="Tap to modify or delete"
-            onPress={() =>
-              Alert.alert('Modify Spot', '', [
-                {
-                  text: r.isAvailable ? 'Mark Unavailable' : 'Mark Available',
-                  onPress: () =>
-                    update(ref(database, `parkingReports/${r.id}`), {
-                      isAvailable: !r.isAvailable,
-                    }),
-                },
-                {
-                  text: 'Delete',
-                  style: 'destructive',
-                  onPress: () => remove(ref(database, `parkingReports/${r.id}`)),
-                },
-                { text: 'Cancel' },
-              ])
-            }
+            onPress={async () => {
+  const currentLoc = await Location.getCurrentPositionAsync({});
+  const dist = getDistance(
+    currentLoc.coords.latitude,
+    currentLoc.coords.longitude,
+    r.latitude,
+    r.longitude
+  );
+
+  if (dist > 0.5) {
+    Alert.alert('Too Far', 'You can only modify or delete spots within 0.5 miles of your location.');
+    return;
+  }
+
+  Alert.alert('Modify Spot', '', [
+    {
+      text: r.isAvailable ? 'Mark Unavailable' : 'Mark Available',
+      onPress: () =>
+        update(ref(database, `parkingReports/${r.id}`), {
+          isAvailable: !r.isAvailable,
+        }),
+    },
+    {
+      text: 'Delete',
+      style: 'destructive',
+      onPress: () => remove(ref(database, `parkingReports/${r.id}`)),
+    },
+    { text: 'Cancel' },
+  ]);
+}}
+
           />
         ))}
       </MapView>
@@ -240,22 +325,21 @@ export default function MapScreen({ navigation }) {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Notification Radius</Text>
 
-            {[0.1, 0.2, 0.3, 0.5, 1.0].map(v => (
-              <TouchableOpacity
-                key={v}
-                style={[styles.modalBtn, radius === v ? styles.greenBtn : styles.redBtn]}
-                onPress={() => {
-                  const user = auth.currentUser;
-                  setRadius(v);
-                  set(ref(database, `users/${user.uid}/radius`), v);
-                  setRadiusModalVisible(false);
-                }}
-              >
-                <Text style={styles.btnText}>
-                  {v < 1 ? `${v * 1000} m` : '1 km'}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            {[0.5, 1, 5].map(v => (
+  <TouchableOpacity
+    key={v}
+    style={[styles.modalBtn, radius === v ? styles.greenBtn : styles.redBtn]}
+    onPress={() => {
+      const user = auth.currentUser;
+      setRadius(v);
+      set(ref(database, `users/${user.uid}/radius`), v);
+      setRadiusModalVisible(false);
+    }}
+  >
+    <Text style={styles.btnText}>{v} mile{v > 1 ? 's' : ''}</Text>
+  </TouchableOpacity>
+))}
+
 
             <TouchableOpacity
               onPress={() => setRadiusModalVisible(false)}
