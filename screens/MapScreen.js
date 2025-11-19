@@ -27,18 +27,17 @@ function getDistance(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)); // returns miles
 }
 
-
 export default function MapScreen({ navigation }) {
   const [region, setRegion] = useState(null);
+  const [userLocation, setUserLocation] = useState(null);
   const [parkingReports, setParkingReports] = useState([]);
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [radiusModalVisible, setRadiusModalVisible] = useState(false);
 
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [radius, setRadius] = useState(0.3); // default 300m
-  const [notifiedIds, setNotifiedIds] = useState(new Set());
+  const [radius, setRadius] = useState(0.3); // default 0.3 miles
 
-  const prevMarkerIdsRef = useRef(new Set());
+  const inRadiusRef = useRef(new Set()); // markerIds currently within radius
 
   const route = useRoute();
   const markerId = route.params?.markerId;
@@ -53,6 +52,7 @@ export default function MapScreen({ navigation }) {
   const [addFavsBtn, setAddFavsBtn] = useState(false);
   const [addBtnKey, setAddBtnKey] = useState(0); // to force re-render in settings
 
+  // Load user radius + notification toggle from DB
   useEffect(() => {
     const user = auth.currentUser;
     if (!user) return;
@@ -66,6 +66,7 @@ export default function MapScreen({ navigation }) {
     });
   }, []);
 
+  // Permissions
   useEffect(() => {
     (async () => {
       const notif = await Notifications.requestPermissionsAsync();
@@ -81,89 +82,163 @@ export default function MapScreen({ navigation }) {
     })();
   }, []);
 
+  // Initial region + userLocation
   useEffect(() => {
     (async () => {
       const loc = await Location.getCurrentPositionAsync({});
-      setRegion({
+      const initialRegion = {
         latitude: loc.coords.latitude,
         longitude: loc.coords.longitude,
         latitudeDelta: 0.01,
         longitudeDelta: 0.01,
+      };
+      setRegion(initialRegion);
+      setUserLocation({
+        latitude: loc.coords.latitude,
+        longitude: loc.coords.longitude,
       });
     })();
   }, []);
 
+  // Watch user GPS position for REAL-TIME radius checks
+  useEffect(() => {
+    let subscription;
+
+    (async () => {
+      subscription = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.High,
+          distanceInterval: 10, // update every ~10m
+        },
+        loc => {
+          setUserLocation({
+            latitude: loc.coords.latitude,
+            longitude: loc.coords.longitude,
+          });
+        }
+      );
+    })();
+
+    return () => {
+      if (subscription) subscription.remove();
+    };
+  }, []);
+
+  // Center map once at start
   useEffect(() => {
     if (!mapReady || !region || initialCentered) return;
     mapRef.current?.animateToRegion(region, 800);
     setInitialCentered(true);
   }, [mapReady, region, initialCentered]);
 
+  // Listen to all parking reports in real time
   useEffect(() => {
-  const reportsRef = ref(database, 'parkingReports');
-  const unsubscribe = onValue(reportsRef, async snapshot => {
-    const data = snapshot.val() || {};
-    const arr = Object.keys(data).map(id => ({ id, ...data[id] }));
-    setParkingReports(arr);
+    const reportsRef = ref(database, 'parkingReports');
+    const unsubscribe = onValue(reportsRef, snapshot => {
+      const data = snapshot.val() || {};
+      const arr = Object.keys(data).map(id => ({ id, ...data[id] }));
+      setParkingReports(arr);
+    });
 
-    if (!region || !notificationsEnabled) return;
+    return () => unsubscribe();
+  }, []);
 
-    // ✅ handle each report safely
-    for (const r of arr) {
-      if (!r.isAvailable) continue;
+  // REAL-TIME radius logic: maintain /users/{uid}/notifications as "currently in radius"
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    if (!userLocation) return;
+    if (!notificationsEnabled) return;
+    if (!parkingReports || parkingReports.length === 0) return;
 
-      // ✅ Skip if we've already handled this marker
-      if (prevMarkerIdsRef.current.has(r.id)) continue;
+    let cancelled = false;
 
-      // ✅ Mark as seen immediately (prevents double fire)
-      prevMarkerIdsRef.current.add(r.id);
+    (async () => {
+      const inRadiusNow = new Set();
 
-      const dist = getDistance(region.latitude, region.longitude, r.latitude, r.longitude);
+      const notifRef = ref(database, `users/${user.uid}/notifications`);
+      const notifSnap = await get(notifRef);
 
-      if (dist < radius) {
-        // ✅ Schedule a single push notification
-        await Notifications.scheduleNotificationAsync({
-          content: {
-            title: '🚗 Parking Spot Detected',
-            body:
-              r.userId === auth.currentUser?.uid
-                ? 'You reported this spot.'
-                : 'A new parking spot opened near you!',
-            data: { markerId: r.id },
-          },
-          trigger: null,
+      // Current notifications in DB: markerId -> db key
+      const markerIdToNotifKey = {};
+      if (notifSnap.exists()) {
+        const data = notifSnap.val();
+        Object.entries(data).forEach(([key, value]) => {
+          if (value.markerId) {
+            markerIdToNotifKey[value.markerId] = key;
+          }
         });
+      }
 
-        // ✅ Add to user's notifications in Firebase (once)
-        const user = auth.currentUser;
-        const notifRef = ref(database, `users/${user.uid}/notifications`);
-        const existing = await get(notifRef);
-        let alreadyNotified = false;
+      // 1) Compute which markers are now inside radius
+      for (const r of parkingReports) {
+        if (!r.isAvailable) continue;
 
-        if (existing.exists()) {
-          const data = existing.val();
-          alreadyNotified = Object.values(data).some(n => n.markerId === r.id);
-        }
+        const dist = getDistance(
+          userLocation.latitude,
+          userLocation.longitude,
+          r.latitude,
+          r.longitude
+        );
 
-        if (!alreadyNotified) {
-          await push(notifRef, {
-            title: 'Parking Spot Nearby',
-            body:
-              r.userId === user.uid
-                ? 'You reported this spot.'
-                : 'A new spot opened near you.',
-            markerId: r.id,
-            timestamp: Date.now(),
-          });
+        if (dist <= radius) {
+          inRadiusNow.add(r.id);
+
+          // Newly entered marker (was NOT in previous in-radius set)
+          if (!inRadiusRef.current.has(r.id)) {
+            // Only create DB notification row if not already present
+            if (!markerIdToNotifKey[r.id]) {
+              await push(notifRef, {
+                title: 'Parking Spot Nearby',
+                body:
+                  r.userId === user.uid
+                    ? 'You reported this spot.'
+                    : 'A new spot opened near you.',
+                markerId: r.id,
+                timestamp: Date.now(),
+              });
+            }
+
+            // Push notification once when entering radius
+            await Notifications.scheduleNotificationAsync({
+              content: {
+                title: '🚗 Parking Spot Detected',
+                body:
+                  r.userId === user.uid
+                    ? 'You reported this spot.'
+                    : 'A new parking spot opened near you!',
+                data: { markerId: r.id },
+              },
+              trigger: null,
+            });
+          }
         }
       }
-    }
-  });
 
-  return () => unsubscribe();
-}, [region, notificationsEnabled, notifiedIds, radius]);
+      if (cancelled) return;
 
+      // 2) Markers that LEFT radius (were in old set, not in new set) → remove DB notification
+      const leftIds = [...inRadiusRef.current].filter(
+        id => !inRadiusNow.has(id)
+      );
 
+      for (const mId of leftIds) {
+        const notifKey = markerIdToNotifKey[mId];
+        if (notifKey) {
+          await remove(ref(database, `users/${user.uid}/notifications/${notifKey}`));
+        }
+      }
+
+      // 3) Update our in-radius tracker for next diff
+      inRadiusRef.current = inRadiusNow;
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [parkingReports, userLocation, radius, notificationsEnabled]);
+
+  // Recenter when coming from Notifications screen
   useEffect(() => {
     if (!mapReady || !markerId || !parkingReports.length || !isFocused) return;
     if (lastCenteredMarkerId === markerId) return;
@@ -185,61 +260,64 @@ export default function MapScreen({ navigation }) {
   }, [markerId, parkingReports, mapReady, isFocused, lastCenteredMarkerId]);
 
   const reportParking = async (available) => {
-  const user = auth.currentUser;
-  if (!user) return;
+    const user = auth.currentUser;
+    if (!user) return;
 
-  // 🧭 Get user's current GPS location
-  const currentLoc = await Location.getCurrentPositionAsync({});
-  const userLat = currentLoc.coords.latitude;
-  const userLon = currentLoc.coords.longitude;
+    // Get user's current GPS location
+    const currentLoc = await Location.getCurrentPositionAsync({});
+    const userLat = currentLoc.coords.latitude;
+    const userLon = currentLoc.coords.longitude;
 
-  // 🧮 Distance between map center and your real location
-  const dist = getDistance(
-    region.latitude,
-    region.longitude,
-    userLat,
-    userLon
-  );
+    if (!region) {
+      Alert.alert('Error', 'Map region not ready yet.');
+      return;
+    }
 
-  // 🚫 Prevent reporting if marker is too far from your current position
-  if (dist > 0.5) {
-    Alert.alert(
-      'Out of range',
-      'You can only report parking spots within 0.5 miles of your current location.'
+    // Distance between map center and your actual location
+    const dist = getDistance(
+      region.latitude,
+      region.longitude,
+      userLat,
+      userLon
     );
-    return;
-  }
 
-  // ✅ Add parking report to database
-  const reportRef = push(ref(database, 'parkingReports'));
-  await set(reportRef, {
-    latitude: region.latitude,
-    longitude: region.longitude,
-    isAvailable: available,
-    timestamp: serverTimestamp(),
-    userId: user.uid,
-  });
+    // Prevent reporting too far from actual location
+    if (dist > 0.5) {
+      Alert.alert(
+        'Out of range',
+        'You can only report parking spots within 0.5 miles of your current location.'
+      );
+      return;
+    }
 
-  // ✅ Update lifetime analytics (only increment, never decrease)
-  const analyticsRef = ref(database, `users/${user.uid}/analytics`);
-  const snapshot = await get(analyticsRef);
-  const prev = snapshot.exists()
-    ? snapshot.val()
-    : { total: 0, available: 0, unavailable: 0 };
+    // Add parking report to database
+    const reportRef = push(ref(database, 'parkingReports'));
+    await set(reportRef, {
+      latitude: region.latitude,
+      longitude: region.longitude,
+      isAvailable: available,
+      timestamp: serverTimestamp(),
+      userId: user.uid,
+    });
 
-  const updated = {
-    total: (prev.total || 0) + 1,
-    available: (prev.available || 0) + (available ? 1 : 0),
-    unavailable: (prev.unavailable || 0) + (!available ? 1 : 0),
+    // Update lifetime analytics
+    const analyticsRef = ref(database, `users/${user.uid}/analytics`);
+    const snapshot = await get(analyticsRef);
+    const prev = snapshot.exists()
+      ? snapshot.val()
+      : { total: 0, available: 0, unavailable: 0 };
+
+    const updated = {
+      total: (prev.total || 0) + 1,
+      available: (prev.available || 0) + (available ? 1 : 0),
+      unavailable: (prev.unavailable || 0) + (!available ? 1 : 0),
+    };
+
+    await set(analyticsRef, updated);
+
+    setReportModalVisible(false);
+    Alert.alert('Thanks!', `Spot marked as ${available ? 'available' : 'unavailable'}.`);
   };
-
-  await set(analyticsRef, updated);
-
-  setReportModalVisible(false);
-  Alert.alert('Thanks!', `Spot marked as ${available ? 'available' : 'unavailable'}.`);
-};
-
-
 
   if (!region) {
     return (
@@ -267,50 +345,46 @@ export default function MapScreen({ navigation }) {
             title={r.isAvailable ? 'Available' : 'Unavailable'}
             description="Tap to modify or delete"
             onPress={async () => {
-
               if (addFavsBtn) {
                 let newKey = addBtnKey + 1;
                 setAddBtnKey(newKey);
                 setAddFavsBtn(false);
-                navigation.navigate('Settings',{ 
+                navigation.navigate('Settings', { 
                   longitude: r.longitude,
                   latitude: r.latitude,
                   addBtnKey: newKey,
                 });
+              } else {
+                const currentLoc = await Location.getCurrentPositionAsync({});
+                const dist = getDistance(
+                  currentLoc.coords.latitude,
+                  currentLoc.coords.longitude,
+                  r.latitude,
+                  r.longitude
+                );
 
-              } else{
-      
-                  const currentLoc = await Location.getCurrentPositionAsync({});
-                  const dist = getDistance(
-                    currentLoc.coords.latitude,
-                    currentLoc.coords.longitude,
-                    r.latitude,
-                    r.longitude
-                  );
+                if (dist > 0.5) {
+                  Alert.alert('Too Far', 'You can only modify or delete spots within 0.5 miles of your location.');
+                  return;
+                }
 
-                  if (dist > 0.5) {
-                    Alert.alert('Too Far', 'You can only modify or delete spots within 0.5 miles of your location.');
-                    return;
-                  }
-
-                  Alert.alert('Modify Spot', '', [
-                    {
-                      text: r.isAvailable ? 'Mark Unavailable' : 'Mark Available',
-                      onPress: () =>
-                        update(ref(database, `parkingReports/${r.id}`), {
-                          isAvailable: !r.isAvailable,
-                        }),
-                    },
-                    {
-                      text: 'Delete',
-                      style: 'destructive',
-                      onPress: () => remove(ref(database, `parkingReports/${r.id}`)),
-                    },
-                    { text: 'Cancel' },
-                  ]);
-                }}
+                Alert.alert('Modify Spot', '', [
+                  {
+                    text: r.isAvailable ? 'Mark Unavailable' : 'Mark Available',
+                    onPress: () =>
+                      update(ref(database, `parkingReports/${r.id}`), {
+                        isAvailable: !r.isAvailable,
+                      }),
+                  },
+                  {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: () => remove(ref(database, `parkingReports/${r.id}`)),
+                  },
+                  { text: 'Cancel' },
+                ]);
               }
-
+            }}
           />
         ))}
       </MapView>
@@ -330,9 +404,10 @@ export default function MapScreen({ navigation }) {
         <Text style={styles.reportText}>Report</Text>
       </TouchableOpacity>
 
-        {/*add favs btn */}
+      {/*add favs btn */}
       <TouchableOpacity style={ addFavsBtn ? styles.favsBtnEnabled :styles.favsBtn}
-      onPress={() => setAddFavsBtn(prev => !prev)}>
+      onPress={() => setAddFavsBtn(prev => !prev)}
+      >
         <Text style={{ color: '#fff', fontWeight: 'bold' }}>Add Fav</Text>
       </TouchableOpacity>
 
@@ -349,23 +424,21 @@ export default function MapScreen({ navigation }) {
             <Text style={styles.modalTitle}>Notification Radius</Text>
 
             {[0.5, 1, 5].map(v => (
-  <TouchableOpacity
-    key={v}
-    style={[styles.modalBtn, radius === v ? styles.greenBtn : styles.redBtn]}
-    onPress={() => {
-      const user = auth.currentUser;
-      setRadius(v);
-      set(ref(database, `users/${user.uid}/radius`), v);
-      setRadiusModalVisible(false);
-    }}
-  >
-    <Text style={styles.btnText}>{v} mile{v > 1 ? 's' : ''}</Text>
-  </TouchableOpacity>
-))}
-
-
-
-
+              <TouchableOpacity
+                key={v}
+                style={[styles.modalBtn, radius === v ? styles.greenBtn : styles.redBtn]}
+                onPress={() => {
+                  const user = auth.currentUser;
+                  setRadius(v);
+                  if (user) {
+                    set(ref(database, `users/${user.uid}/radius`), v);
+                  }
+                  setRadiusModalVisible(false);
+                }}
+              >
+                <Text style={styles.btnText}>{v} mile{v > 1 ? 's' : ''}</Text>
+              </TouchableOpacity>
+            ))}
 
             <TouchableOpacity
               onPress={() => setRadiusModalVisible(false)}
@@ -376,8 +449,6 @@ export default function MapScreen({ navigation }) {
           </View>
         </View>
       </Modal>
-
-    
 
       <Modal visible={reportModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
@@ -498,7 +569,8 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     elevation: 5
   },
-  favsBtnEnabled: {     position: 'absolute',
+  favsBtnEnabled: {     
+    position: 'absolute',
     bottom: 95, right: 20, 
     backgroundColor: '#48ff00ff',
     paddingHorizontal: 20,
