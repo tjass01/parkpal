@@ -50,6 +50,9 @@ export default function MapScreen({ navigation }) {
   const [lastCenteredMarkerId, setLastCenteredMarkerId] = useState(null);
   const [initialCentered, setInitialCentered] = useState(false);
 
+  const [addFavsBtn, setAddFavsBtn] = useState(false);
+  const [addBtnKey, setAddBtnKey] = useState(0); // to force re-render in settings
+
   useEffect(() => {
     const user = auth.currentUser;
     if (!user) return;
@@ -264,35 +267,49 @@ export default function MapScreen({ navigation }) {
             title={r.isAvailable ? 'Available' : 'Unavailable'}
             description="Tap to modify or delete"
             onPress={async () => {
-  const currentLoc = await Location.getCurrentPositionAsync({});
-  const dist = getDistance(
-    currentLoc.coords.latitude,
-    currentLoc.coords.longitude,
-    r.latitude,
-    r.longitude
-  );
 
-  if (dist > 0.5) {
-    Alert.alert('Too Far', 'You can only modify or delete spots within 0.5 miles of your location.');
-    return;
-  }
+              if (addFavsBtn) {
+                let newKey = addBtnKey + 1;
+                setAddBtnKey(newKey);
+                setAddFavsBtn(false);
+                navigation.navigate('Settings',{ 
+                  longitude: r.longitude,
+                  latitude: r.latitude,
+                  addBtnKey: newKey,
+                });
 
-  Alert.alert('Modify Spot', '', [
-    {
-      text: r.isAvailable ? 'Mark Unavailable' : 'Mark Available',
-      onPress: () =>
-        update(ref(database, `parkingReports/${r.id}`), {
-          isAvailable: !r.isAvailable,
-        }),
-    },
-    {
-      text: 'Delete',
-      style: 'destructive',
-      onPress: () => remove(ref(database, `parkingReports/${r.id}`)),
-    },
-    { text: 'Cancel' },
-  ]);
-}}
+              } else{
+      
+                  const currentLoc = await Location.getCurrentPositionAsync({});
+                  const dist = getDistance(
+                    currentLoc.coords.latitude,
+                    currentLoc.coords.longitude,
+                    r.latitude,
+                    r.longitude
+                  );
+
+                  if (dist > 0.5) {
+                    Alert.alert('Too Far', 'You can only modify or delete spots within 0.5 miles of your location.');
+                    return;
+                  }
+
+                  Alert.alert('Modify Spot', '', [
+                    {
+                      text: r.isAvailable ? 'Mark Unavailable' : 'Mark Available',
+                      onPress: () =>
+                        update(ref(database, `parkingReports/${r.id}`), {
+                          isAvailable: !r.isAvailable,
+                        }),
+                    },
+                    {
+                      text: 'Delete',
+                      style: 'destructive',
+                      onPress: () => remove(ref(database, `parkingReports/${r.id}`)),
+                    },
+                    { text: 'Cancel' },
+                  ]);
+                }}
+              }
 
           />
         ))}
@@ -311,6 +328,12 @@ export default function MapScreen({ navigation }) {
 
       <TouchableOpacity style={styles.reportButton} onPress={() => setReportModalVisible(true)}>
         <Text style={styles.reportText}>Report</Text>
+      </TouchableOpacity>
+
+        {/*add favs btn */}
+      <TouchableOpacity style={ addFavsBtn ? styles.favsBtnEnabled :styles.favsBtn}
+      onPress={() => setAddFavsBtn(prev => !prev)}>
+        <Text style={{ color: '#fff', fontWeight: 'bold' }}>Add Fav</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -341,6 +364,9 @@ export default function MapScreen({ navigation }) {
 ))}
 
 
+
+
+
             <TouchableOpacity
               onPress={() => setRadiusModalVisible(false)}
               style={styles.cancelBtn}
@@ -350,6 +376,8 @@ export default function MapScreen({ navigation }) {
           </View>
         </View>
       </Modal>
+
+    
 
       <Modal visible={reportModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
@@ -424,7 +452,7 @@ const styles = StyleSheet.create({
   reportText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
   radiusButton: {
     position: 'absolute',
-    bottom: 100,
+    bottom: 150,
     right: 20,
     backgroundColor: '#fff',
     paddingHorizontal: 18,
@@ -461,4 +489,21 @@ const styles = StyleSheet.create({
   btnText: { color: 'white', fontSize: 18, fontWeight: 'bold' },
   cancelBtn: { alignItems: 'center', marginTop: 10 },
   cancelText: { fontSize: 16, color: '#555' },
+  favsBtn: { 
+    position: 'absolute',
+    bottom: 95, right: 20, 
+    backgroundColor: '#FFA500',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 30,
+    elevation: 5
+  },
+  favsBtnEnabled: {     position: 'absolute',
+    bottom: 95, right: 20, 
+    backgroundColor: '#48ff00ff',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 30,
+    elevation: 5 
+  },
 });
