@@ -11,35 +11,27 @@ export default function NotificationsScreen() {
   const [history, setHistory] = useState([]);
   const navigation = useNavigation();
 
-  // convert timestamp to "x minutes ago"
-  function timeAgo(ts) {
-    const diffMs = Date.now() - ts;
-    const mins = Math.floor(diffMs / 60000);
-    if (mins < 1) return "Just now";
-    if (mins === 1) return "1 minute ago";
-    return `${mins} minutes ago`;
-  }
+  // Format timestamp into readable date/time
   function formatDate(ts) {
   const d = new Date(ts);
   return d.toLocaleString();
 }
 
-  // load history
+//Load notifications but only those created AFTER the user's last login.
   useEffect(() => {
     if (!user) return;
-  
-    const lastLoginRef = ref(database, `users/${user.uid}/lastLogin`);
-    const notifRef = ref(database, `users/${user.uid}/notifications`);
-    onValue(lastLoginRef, loginSnap => {
+    const lastLoginRef = ref(database, `users/${user.uid}/lastLogin`); // Reference to user’s last login timestamp in Firebase
+    const notifRef = ref(database, `users/${user.uid}/notifications`); // Reference to all notifications for this user
+    onValue(lastLoginRef, loginSnap => { // Listen for lastLogin changes
       if (!loginSnap.exists()) return;
       const lastLogin = loginSnap.val();
-      onValue(notifRef, notifSnap => {
+      onValue(notifRef, notifSnap => { // Listen for notification updates in real-time
         if (!notifSnap.exists()) return;
   
         const data = notifSnap.val();
         const arr = Object.keys(data).map(k => ({ id: k, ...data[k] }));
-        const filtered = arr.filter(n => n.timestamp >= lastLogin);
-        filtered.sort((a, b) => b.timestamp - a.timestamp);
+        const filtered = arr.filter(n => n.timestamp >= lastLogin); // Only include notifications newer than lastLogin
+        filtered.sort((a, b) => b.timestamp - a.timestamp); // Sort newest -> oldest
   
         setHistory(filtered);
       });
