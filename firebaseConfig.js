@@ -1,3 +1,4 @@
+// Firebase connection setup for backend services
 import { initializeApp } from 'firebase/app';
 import { getDatabase } from 'firebase/database';
 import { getAuth } from 'firebase/auth';
@@ -12,8 +13,10 @@ const firebaseConfig = {
   appId: "1:708794384681:web:bfdd19e624571e34f13738"
 };
 
+// Initialize Firebase app
 const app = initializeApp(firebaseConfig);
 const database = getDatabase(app);
 const auth = getAuth(app);
 
+// Export database and auth for use across the app
 export { database, auth };

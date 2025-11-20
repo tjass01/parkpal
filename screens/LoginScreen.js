@@ -40,6 +40,7 @@ export default function LoginScreen({ navigation }) {
     }
   };
 
+  // Email validation using regex
   const validateInput = () => {
     if (!email.trim()) {
       Alert.alert('Error', 'Please enter your email');
@@ -61,6 +62,7 @@ export default function LoginScreen({ navigation }) {
     return true;
   };
 
+  // Handle login and signup with Firebase Auth
   const handleAuth = async () => {
     if (!validateInput()) return;
   

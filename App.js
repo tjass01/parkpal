@@ -99,6 +99,7 @@ export default function App() {
     );
   }
 
+  // Show main app if logged in, otherwise show login screen
   return (
     <NavigationContainer ref={navigationRef}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
