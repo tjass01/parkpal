@@ -51,6 +51,7 @@ export default function App() {
     return null; // or custom loading screen
   }
 
+  // Initial navigation tabs
   function MainTabs() {
     return (
       <Tab.Navigator

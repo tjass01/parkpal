@@ -345,6 +345,7 @@ useEffect(() => {
     );
   }
 
+  // initial map interface
   return (
     <View style={styles.container}>
       <MapView
@@ -356,6 +357,7 @@ useEffect(() => {
         onRegionChangeComplete={setRegion}
       >
         {parkingReports.map(r => (
+          // marker(red, green button)
           <Marker
             key={r.id}
             coordinate={{ latitude: r.latitude, longitude: r.longitude }}
@@ -468,6 +470,7 @@ useEffect(() => {
         </View>
       </Modal>
 
+      {/* Report modal design */}
       <Modal visible={reportModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
