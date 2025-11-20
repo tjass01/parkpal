@@ -131,17 +131,35 @@ export default function MapScreen({ navigation }) {
     setInitialCentered(true);
   }, [mapReady, region, initialCentered]);
 
-  // Listen to all parking reports in real time
-  useEffect(() => {
-    const reportsRef = ref(database, 'parkingReports');
-    const unsubscribe = onValue(reportsRef, snapshot => {
-      const data = snapshot.val() || {};
-      const arr = Object.keys(data).map(id => ({ id, ...data[id] }));
-      setParkingReports(arr);
+  // Listen to all parking reports in real time + AUTO CLEANUP
+useEffect(() => {
+  const reportsRef = ref(database, 'parkingReports');
+  const unsubscribe = onValue(reportsRef, snapshot => {
+    const data = snapshot.val() || {};
+    const arr = Object.keys(data).map(id => ({ id, ...data[id] }));
+    
+    // AUTO-DELETE old reports (older than 2 hours)
+    const now = Date.now();
+    const TWO_HOURS = 2 * 60 * 60* 1000; // 2 hours in milliseconds
+    
+    arr.forEach(report => {
+      if (report.timestamp && (now - report.timestamp > TWO_HOURS)) {
+        // Delete from Firebase
+        remove(ref(database, `parkingReports/${report.id}`));
+      }
     });
+    
+    // Only show reports that are NOT old
+    const freshReports = arr.filter(report => {
+      if (!report.timestamp) return true; // keep if no timestamp
+      return (now - report.timestamp <= TWO_HOURS);
+    });
+    
+    setParkingReports(freshReports);
+  });
 
-    return () => unsubscribe();
-  }, []);
+  return () => unsubscribe();
+}, []);
 
   // REAL-TIME radius logic: maintain /users/{uid}/notifications as "currently in radius"
   useEffect(() => {
