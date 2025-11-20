@@ -3,10 +3,37 @@
 UW-Madison campus real-time crowdsourced parking availability app.
 
 ## Features
-- Real-time parking availability reporting
-- Interactive map with parking markers
-- User authentication (Login/Signup)
-- Firebase real-time database integration
+
+### 🔐 Authentication
+- Email/password login and signup with Firebase Auth
+- Secure user sessions with persistent login
+- Account deletion option
+
+### 🗺️ Interactive Map
+- Real-time map with current location tracking
+- Parking status markers:
+  - 🟢 Green: Parking available
+  - 🔴 Red: Parking unavailable
+- Tap markers to see report details (time, reporter, delete option for your reports)
+
+### 📍 Parking Reports
+- Report parking availability at current location
+- Choose "Available" or "Unavailable" status
+- Reports sync instantly to all users via Firebase Realtime Database
+- Automatic timestamp tracking
+
+### 🔍 Filter & Search
+- **Filter Options**: View all reports, only available, or only unavailable spots
+- **Location Search**: Search for campus locations (e.g., "Memorial Union", "Bascom Hall")
+- Map automatically animates to searched location
+
+### 👤 Profile & Statistics
+- View your parking report statistics:
+  - Total reports
+  - Available vs. Unavailable breakdown
+- See your complete report history with timestamps
+- Delete your past reports
+- Logout and account management
 
 ## Setup Instructions
 
@@ -54,22 +81,23 @@ npx expo start --tunnel
 - Firebase (Authentication + Realtime Database)
 - React Navigation
 - React Native Maps
+- Google Geocoding API
 
 ## Team
 - Tejas Parasumanna  parasumanna@wisc.edu — tjass01
 - Jivesh Mehta jmehta22@wisc.edu - Jivesh0703
-- Cole Niemann cjniemann@wisc.edu ColeNiemann
+- Cole Niemann cjniemann@wisc.edu - ColeNiemann
 - Sunghoon Lee slee2342@wisc.edu - leondevazel
 
 ## Project Structure
 ```
-parkpal-new/
+parkpal/
 ├── screens/
-│   ├── LoginScreen.js
-│   ├── MapScreen.js
-│   ├── ProfileScreen.js
-│   └── ReportScreen.js
-├── firebaseConfig.js
-├── App.js
-└── package.json
+│   ├── LoginScreen.js       # Login interface
+│   ├── SignupScreen.js      # Registration interface
+│   ├── MapScreen.js         # Main map with reports, filters, and search
+│   └── ProfileScreen.js     # User profile, statistics, and report history
+├── firebaseConfig.js        # Firebase configuration
+├── App.js                   # Navigation setup
+└── package.json             # Dependencies
 ```

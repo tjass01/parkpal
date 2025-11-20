@@ -6,3 +6,4 @@ export async function triggerNotification(title, body) {
     trigger: null, 
   });
 }
+//npx expo install expo-notifications expo-device expo-constants
