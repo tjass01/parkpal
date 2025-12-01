@@ -131,6 +131,21 @@ export default function MapScreen({ navigation }) {
     });
   }, []);
 
+  // Load saved areaFilter from DB (so both Map & Notifications share it)
+useEffect(() => {
+  const user = auth.currentUser;
+  if (!user) return;
+
+  get(ref(database, `users/${user.uid}/areaFilter`)).then(snap => {
+    if (snap.exists()) {
+      setAreaFilter(snap.val());
+    } else {
+      setAreaFilter(null);
+    }
+  });
+}, []);
+
+
   // Permissions
   useEffect(() => {
     (async () => {
@@ -606,34 +621,43 @@ useEffect(() => {
 
       {/*  SHOW ALL OPTION (Top)  */}
       <TouchableOpacity
-        style={[
-          styles.modalBtn,
-          areaFilter === null ? styles.greenBtn : styles.redBtn
-        ]}
-        onPress={() => {
-          setAreaFilter(null);
-          setFilterModalVisible(false);
-        }}
-      >
-        <Text style={styles.btnText}>Show All Areas</Text>
-      </TouchableOpacity>
+  style={[
+    styles.modalBtn,
+    areaFilter === null ? styles.greenBtn : styles.redBtn
+  ]}
+  onPress={() => {
+    setAreaFilter(null);
+    const user = auth.currentUser;
+    if (user) {
+      set(ref(database, `users/${user.uid}/areaFilter`), null);
+    }
+    setFilterModalVisible(false);
+  }}
+>
+  <Text style={styles.btnText}>Show All Areas</Text>
+</TouchableOpacity>
 
       {/* UW AREA OPTIONS  */}
       {UW_AREAS.map(a => (
-        <TouchableOpacity
-          key={a.key}
-          style={[
-            styles.modalBtn,
-            areaFilter === a.key ? styles.greenBtn : styles.redBtn
-          ]}
-          onPress={() => {
-            setAreaFilter(a.key);
-            setFilterModalVisible(false);
-          }}
-        >
-          <Text style={styles.btnText}>{a.name}</Text>
-        </TouchableOpacity>
-      ))}
+  <TouchableOpacity
+    key={a.key}
+    style={[
+      styles.modalBtn,
+      areaFilter === a.key ? styles.greenBtn : styles.redBtn
+    ]}
+    onPress={() => {
+      setAreaFilter(a.key);
+      const user = auth.currentUser;
+      if (user) {
+        set(ref(database, `users/${user.uid}/areaFilter`), a.key);
+      }
+      setFilterModalVisible(false);
+    }}
+  >
+    <Text style={styles.btnText}>{a.name}</Text>
+  </TouchableOpacity>
+))}
+
 
       {/*  CANCEL BUTTON  */}
       <TouchableOpacity
