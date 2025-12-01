@@ -7,6 +7,68 @@ import { database, auth } from '../firebaseConfig';
 import { ref, push, onValue, serverTimestamp, update, remove, get, set } from 'firebase/database';
 import { useRoute, useIsFocused } from '@react-navigation/native';
 
+// location details for filter on map
+const UW_AREAS = [
+  {
+    key: "engineering",
+    name: "Engineering Campus",
+    latitude: 43.0726,
+    longitude: -89.4060,
+    radius: 0.4,
+  },
+  {
+    key: "bascom",
+    name: "Bascom Hill",
+    latitude: 43.0757,
+    longitude: -89.4041,
+    radius: 0.4,
+  },
+  {
+    key: "unionSouth",
+    name: "Union South",
+    latitude: 43.0711,
+    longitude: -89.4075,
+    radius: 0.4,
+  },
+  {
+    key: "terrace",
+    name: "Memorial Union Terrace",
+    latitude: 43.0762,
+    longitude: -89.3995,
+    radius: 0.4,
+  },
+  {
+    key: "campRandall",
+    name: "Camp Randall",
+    latitude: 43.0690,
+    longitude: -89.4125,
+    radius: 0.5,
+  },
+  {
+    key: "lakeshore",
+    name: "Lakeshore Dorms",
+    latitude: 43.0795,
+    longitude: -89.4050,
+    radius: 0.5,
+  },
+  {
+    key: "stateStreet",
+    name: "State Street / Library Mall",
+    latitude: 43.0736,
+    longitude: -89.3970,
+    radius: 0.35, 
+  },  
+  {
+    key: "capitol",
+    name: "State Capitol Square",
+    latitude: 43.0747,
+    longitude: -89.3842,
+    radius: 0.35,
+  },
+  
+];
+
+
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -51,6 +113,9 @@ export default function MapScreen({ navigation }) {
 
   const [addFavsBtn, setAddFavsBtn] = useState(false);
   const [addBtnKey, setAddBtnKey] = useState(0); // to force re-render in settings
+
+  const [areaFilter, setAreaFilter] = useState(null); 
+  const [filterModalVisible, setFilterModalVisible] = useState(false);
 
   // Load user radius + notification toggle from DB
   useEffect(() => {
@@ -345,6 +410,29 @@ useEffect(() => {
     );
   }
 
+  const filteredReports = parkingReports.filter(r => {
+
+    //  CASE 1: SHOW ALL AREAS but respect user radius 
+    if (!areaFilter) {
+      if (!userLocation) return true;
+      
+      const distUser = getDistance(
+        userLocation.latitude,
+        userLocation.longitude,
+        r.latitude,
+        r.longitude
+      );
+      return distUser <= radius; // show only spots within radius
+    }
+  
+    //  CASE 2: SPECIFIC AREA SELECTED 
+    const area = UW_AREAS.find(a => a.key === areaFilter);
+    if (!area) return true;
+  
+    const distArea = getDistance(area.latitude, area.longitude, r.latitude, r.longitude);
+    return distArea <= area.radius;
+  });
+
   // initial map interface
   return (
     <View style={styles.container}>
@@ -356,7 +444,7 @@ useEffect(() => {
         onMapReady={() => setMapReady(true)}
         onRegionChangeComplete={setRegion}
       >
-        {parkingReports.map(r => (
+        {filteredReports.map(r => (
           // marker(red, green button)
           <Marker
             key={r.id}
@@ -423,6 +511,14 @@ useEffect(() => {
       <TouchableOpacity style={styles.reportButton} onPress={() => setReportModalVisible(true)}>
         <Text style={styles.reportText}>Report</Text>
       </TouchableOpacity>
+
+      <TouchableOpacity // filter button
+  style={styles.filterButton}
+  onPress={() => setFilterModalVisible(true)}
+>
+  <Text style={styles.filterButtonText}>🎯 Filter by Area</Text>
+</TouchableOpacity>
+
 
       {/*add favs btn */}
       <TouchableOpacity style={ addFavsBtn ? styles.favsBtnEnabled :styles.favsBtn}
@@ -502,6 +598,55 @@ useEffect(() => {
           </View>
         </View>
       </Modal>
+
+      <Modal visible={filterModalVisible} transparent animationType="fade">
+  <View style={styles.modalOverlay}>
+    <View style={styles.modalContent}>
+      <Text style={styles.modalTitle}>Filter by UW-Madison Area</Text>
+
+      {/*  SHOW ALL OPTION (Top)  */}
+      <TouchableOpacity
+        style={[
+          styles.modalBtn,
+          areaFilter === null ? styles.greenBtn : styles.redBtn
+        ]}
+        onPress={() => {
+          setAreaFilter(null);
+          setFilterModalVisible(false);
+        }}
+      >
+        <Text style={styles.btnText}>Show All Areas</Text>
+      </TouchableOpacity>
+
+      {/* UW AREA OPTIONS  */}
+      {UW_AREAS.map(a => (
+        <TouchableOpacity
+          key={a.key}
+          style={[
+            styles.modalBtn,
+            areaFilter === a.key ? styles.greenBtn : styles.redBtn
+          ]}
+          onPress={() => {
+            setAreaFilter(a.key);
+            setFilterModalVisible(false);
+          }}
+        >
+          <Text style={styles.btnText}>{a.name}</Text>
+        </TouchableOpacity>
+      ))}
+
+      {/*  CANCEL BUTTON  */}
+      <TouchableOpacity
+        style={styles.cancelBtn}
+        onPress={() => setFilterModalVisible(false)}
+      >
+        <Text style={styles.cancelText}>Cancel</Text>
+      </TouchableOpacity>
+    </View>
+  </View>
+</Modal>
+
+
     </View>
   );
 }
@@ -599,4 +744,19 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     elevation: 5 
   },
+  filterButton: {
+    position: "absolute",
+    bottom: 210,
+    right: 20,
+    backgroundColor: "#fff",
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 30,
+    elevation: 5,
+  },
+  filterButtonText: {
+    fontWeight: "600",
+    fontSize: 16,
+  },
+  
 });
