@@ -9,10 +9,12 @@ import {
   StyleSheet,
   Modal,
   SafeAreaView,
+  Alert,
 } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
-import { auth } from '../firebaseConfig';
-import { useRoute } from '@react-navigation/native';
+import { auth, database } from '../firebaseConfig';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import { ref, update, get} from 'firebase/database';
 
 export default function SettingsScreen() {
   const route = useRoute();
@@ -26,22 +28,28 @@ export default function SettingsScreen() {
 
   const user = auth.currentUser;
   const favKey = `favorites_${user.uid}`;
-
   const loadedRef = useRef(false);
+  const navigation = useNavigation();
 
   // load settings and favorites
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        const storedPush = await SecureStore.getItemAsync('pushEnabled');
+        // retrieve push notification setting from Firebase to load as user preference
+        const storedPush = await get(ref(database, `users/${user.uid}/notificationsEnabled`))
+        if (storedPush.exists()){
+          setPushEnabled(storedPush.val());
+        }
+
         const storedSpot = await SecureStore.getItemAsync('spotAlertEnabled');
         const storedFavs = await SecureStore.getItemAsync(favKey);
 
-        if (storedPush !== null) setPushEnabled(JSON.parse(storedPush));
+        //if (storedPush !== null) setPushEnabled(JSON.parse(storedPush));
         if (storedSpot !== null) setSpotAlertEnabled(JSON.parse(storedSpot));
         if (storedFavs !== null) setFavorites(JSON.parse(storedFavs));
 
         loadedRef.current = true;
+        console.log('Settings loaded',JSON.stringify(storedFavs) );
       } catch (e) {
         console.log('Error loading settings:', e);
       }
@@ -49,21 +57,25 @@ export default function SettingsScreen() {
     loadSettings();
   }, [favKey]);
 
-  // save push and spot settings
-  useEffect(() => {
-    if (!loadedRef.current) return;
-    SecureStore.setItemAsync('pushEnabled', JSON.stringify(pushEnabled));
-  }, [pushEnabled]);
 
-  useEffect(() => {
+  useEffect( () => {
     if (!loadedRef.current) return;
-    SecureStore.setItemAsync('spotAlertEnabled', JSON.stringify(spotAlertEnabled));
+       SecureStore.setItemAsync('spotAlertEnabled', JSON.stringify(spotAlertEnabled));
   }, [spotAlertEnabled]);
 
-  // save favorites
-  useEffect(() => {
+  // save favorites whenever list is updated
+  useEffect( () => {
     if (!loadedRef.current) return;
-    SecureStore.setItemAsync(favKey, JSON.stringify(favorites));
+
+    const saveFavorites = async () => {
+      try {
+        await SecureStore.setItemAsync(favKey, JSON.stringify(favorites));
+      } catch (e) {
+        console.log('Error saving favorites:', e);
+      }
+    };
+
+  saveFavorites();
   }, [favorites, favKey]);
 
   // show modal if navigated with longitude & latitude
@@ -73,6 +85,8 @@ export default function SettingsScreen() {
     }
   }, [latitude, longitude, addBtnKey]);
 
+
+  // add favorite lot
   const addFavorite = () => {
     if (!newLotName.trim()) return; 
     const newFav = {
@@ -86,9 +100,20 @@ export default function SettingsScreen() {
     setModalVisible(false);
   };
 
+  // remove favorite lot
   const removeFavorite = (name) => {
     setFavorites(favorites.filter((f) => f.name !== name));
   };
+
+  // navigate to favorite lot on map
+  const goToFavLot = (fav) => {
+    //Alert.alert(`Navigating to favorite lot: ${fav.latitude}, ${fav.longitude}`);
+    navigation.navigate('Map', {
+      goFavLat: fav.latitude,
+      goFavLng: fav.longitude,
+      fromFavorites: true,
+    })
+  }
 
   return (
     <SafeAreaView style={styles.safeContainer}>
@@ -103,7 +128,18 @@ export default function SettingsScreen() {
             <Text style={styles.label}>Push Notifications</Text>
             <Switch
               value={pushEnabled}
-              onValueChange={setPushEnabled}
+
+              
+              onValueChange={ async (value) => {
+                
+                setPushEnabled(value);
+                if (user){
+                  await update(ref(database, `users/${user.uid}`),{
+                    notificationsEnabled: value
+                  });
+                }
+              }
+            }
               trackColor={{ false: '#ccc', true: '#2196F3' }}
               thumbColor={pushEnabled ? '#fff' : '#f4f3f4'}
             />
@@ -122,9 +158,14 @@ export default function SettingsScreen() {
         {/* favorites Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Favorite Lots</Text>
-          {favorites.map((fav) => (
+          {
+          favorites.map((fav) => (
             <View key={fav.name} style={styles.tag}>
-              <Text style={styles.tagText}>{fav.name}</Text>
+
+              {/* lot  */}
+              <TouchableOpacity onPress={() => goToFavLot(fav)}>
+                <Text style={styles.tagText}>{fav.name}</Text>
+              </TouchableOpacity>
               <TouchableOpacity onPress={() => removeFavorite(fav.name)}>
                 <Text style={styles.remove}>×</Text>
               </TouchableOpacity>

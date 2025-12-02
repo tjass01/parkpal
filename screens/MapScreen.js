@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, StyleSheet, Text, TouchableOpacity, Modal, Alert } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import { database, auth } from '../firebaseConfig';
 import { ref, push, onValue, serverTimestamp, update, remove, get, set } from 'firebase/database';
-import { useRoute, useIsFocused } from '@react-navigation/native';
+import { useRoute, useIsFocused, useFocusEffect } from '@react-navigation/native';
 
 // location details for filter on map
 const UW_AREAS = [
@@ -116,6 +116,27 @@ export default function MapScreen({ navigation }) {
 
   const [areaFilter, setAreaFilter] = useState(null); 
   const [filterModalVisible, setFilterModalVisible] = useState(false);
+
+  const {goFavLat, goFavLng, fromFavorites} = route.params || {};
+
+  // center map on favorite lot if coming from on click favLot
+  useFocusEffect( 
+    useCallback(() => {
+
+    if ( !fromFavorites || !goFavLat || !goFavLng) {
+      return;
+    }
+    else{
+      mapRef.current?.animateToRegion({
+          latitude: goFavLat,
+          longitude: goFavLng,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+        }, 800 );
+    }
+  }, [fromFavorites, goFavLat, goFavLng])
+ );
+
 
   // Load user radius + notification toggle from DB
   useEffect(() => {
