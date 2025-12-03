@@ -54,8 +54,12 @@ cd parkpal
 ```bash
 npm install
 ```
-
-3. Start the development server:
+3. Install dependencies for for accelerometer and vibration:
+```bash
+npx expo install expo-sensors
+npx expo install expo-haptics
+```
+4. Start the development server:
 ```bash
 npx expo start
 ```
