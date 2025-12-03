@@ -6,6 +6,10 @@ import * as Notifications from 'expo-notifications';
 import { database, auth } from '../firebaseConfig';
 import { ref, push, onValue, serverTimestamp, update, remove, get, set } from 'firebase/database';
 import { useRoute, useIsFocused, useFocusEffect } from '@react-navigation/native';
+import { Accelerometer } from 'expo-sensors';
+import * as Haptics from 'expo-haptics';
+
+
 
 // location details for filter on map
 const UW_AREAS = [
@@ -409,7 +413,6 @@ useEffect(() => {
       return;
     }
 
-    // Add parking report to database
     const reportRef = push(ref(database, 'parkingReports'));
     await set(reportRef, {
       latitude: region.latitude,
@@ -419,7 +422,6 @@ useEffect(() => {
       userId: user.uid,
     });
 
-    // Update lifetime analytics
     const analyticsRef = ref(database, `users/${user.uid}/analytics`);
     const snapshot = await get(analyticsRef);
     const prev = snapshot.exists()
@@ -437,6 +439,97 @@ useEffect(() => {
     setReportModalVisible(false);
     Alert.alert('Thanks!', `Spot marked as ${available ? 'available' : 'unavailable'}.`);
   };
+  useEffect(() => {
+  if (!mapReady || !markerId || !parkingReports.length || !isFocused) return;
+  if (lastCenteredMarkerId === markerId) return;
+
+  const target = parkingReports.find(r => r.id === markerId);
+  if (!target) return;
+
+  mapRef.current?.animateToRegion(
+    {
+      latitude: target.latitude,
+      longitude: target.longitude,
+      latitudeDelta: 0.005,
+      longitudeDelta: 0.005,
+    },
+    800
+  );
+
+  setLastCenteredMarkerId(markerId);
+}, [markerId, parkingReports, mapReady, isFocused, lastCenteredMarkerId]);
+
+
+useEffect(() => {
+  let lastShake = 0;
+  const shakeThreshold = 2.2; // Adjust for sensitivity — higher = harder shake
+  const subscription = Accelerometer.addListener(({ x, y, z }) => {
+    const acceleration = Math.sqrt(x * x + y * y + z * z);
+    const now = Date.now();
+
+    if (acceleration > shakeThreshold && now - lastShake > 3000) {
+      lastShake = now;
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+
+
+      Alert.alert(
+        '🚘 Leaving this spot?',
+        'Are you leaving your parking spot?',
+        [
+          {
+            text: 'No',
+            style: 'cancel',
+          },
+          {
+            text: 'Yes',
+            onPress: async () => {
+              try {
+                const loc = await Location.getCurrentPositionAsync({});
+                const reportRef = push(ref(database, 'parkingReports'));
+                await set(reportRef, {
+                  latitude: loc.coords.latitude,
+                  longitude: loc.coords.longitude,
+                  isAvailable: true,
+                  timestamp: Date.now(),
+                  userId: auth.currentUser?.uid,
+                });
+                Alert.alert('Spot Reported', 'Your previous spot has been marked as available.');
+              } catch (error) {
+                console.error('Error reporting spot:', error);
+                Alert.alert('Error', 'Could not mark your spot. Try again.');
+              }
+            },
+          },
+        ]
+      );
+    }
+  });
+
+  Accelerometer.setUpdateInterval(200); // Update sensor data every 200ms
+  return () => subscription && subscription.remove();
+}, []);
+
+
+// Handle notification tap → mark last location as available
+useEffect(() => {
+  const subscription = Notifications.addNotificationResponseReceivedListener(async (response) => {
+    if (response.notification.request.content.data.type === 'leave_prompt') {
+      const loc = await Location.getCurrentPositionAsync({});
+      const reportRef = push(ref(database, 'parkingReports'));
+      await set(reportRef, {
+        latitude: loc.coords.latitude,
+        longitude: loc.coords.longitude,
+        isAvailable: true,
+        timestamp: Date.now(),
+        userId: auth.currentUser?.uid,
+      });
+      Alert.alert('Spot Reported', 'Your previous spot has been marked as available.');
+    }
+  });
+
+  return () => subscription.remove();
+}, []);
 
   if (!region) {
     return (
