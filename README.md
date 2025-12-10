@@ -41,6 +41,18 @@ UW-Madison campus real-time crowdsourced parking availability app.
 - Allows quick reporting of a free parking space without having to click and locate a spot.
 - Haptic feedback and safety delay to avoid unwanted triggers.
 
+### 🧹 Auto-Cleanup
+- Automatically removes parking reports older than 2 hours
+- Keeps data fresh and prevents outdated information
+- Background processing requires no user action
+- Improves app performance and data accuracy
+
+### ⭐ Favorite Parking Lots
+- Save frequently visited parking locations
+- Quick access from Settings screen
+- Tap "Add Fav" on map to mark a location
+- Stored locally for instant retrieval
+
 ### 👤 Profile & Statistics
 - View your parking report statistics:
   - Total reports
