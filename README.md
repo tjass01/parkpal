@@ -23,11 +23,11 @@ UW-Madison campus real-time crowdsourced parking availability app.
 - Automatic timestamp tracking
 
 ### 🔔 Notifications
--View real-time parking alerts based on your selected radius and location area filters
--Live updates powered by Firebase Realtime Database
--Tap a notification to navigate directly to the exact parking spot on the map
--Displays live distance from current location for each alert
--Notifications automatically sync with filtered markers on the Map screen
+- View real-time parking alerts based on your selected radius and location area filters
+- Live updates powered by Firebase Realtime Database
+- Tap a notification to navigate directly to the exact parking spot on the map
+- Displays live distance from current location for each alert
+- Notifications automatically sync with filtered markers on the Map screen
 
 ### 🔍 Filter & Search
 - **Filter Options**: View all reports, only available, or only unavailable spots
