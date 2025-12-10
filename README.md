@@ -35,6 +35,12 @@ UW-Madison campus real-time crowdsourced parking availability app.
 - **Location Filter**: Filter reports by campus locations on MapScreen (e.g., Memorial Union, Bascom Hall)
 - Map automatically animates to searched location
 
+### 📱 Accelerometer Integration
+-Detects phone movement through the inbuilt accelerator in the device.
+-Prompts the users once a leaving car motion (shake event) is detected.
+-Allows quick reporting of a free parking space without having to click and locate a spot.
+-Haptic feedback and safety delay to avoid unwanted triggers.
+
 ### 👤 Profile & Statistics
 - View your parking report statistics:
   - Total reports
