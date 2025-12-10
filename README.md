@@ -22,9 +22,17 @@ UW-Madison campus real-time crowdsourced parking availability app.
 - Reports sync instantly to all users via Firebase Realtime Database
 - Automatic timestamp tracking
 
+### 🔔 Notifications
+-View real-time parking alerts based on your selected radius and location area filters
+-Live updates powered by Firebase Realtime Database
+-Tap a notification to navigate directly to the exact parking spot on the map
+-Displays live distance from current location for each alert
+-Notifications automatically sync with filtered markers on the Map screen
+
 ### 🔍 Filter & Search
 - **Filter Options**: View all reports, only available, or only unavailable spots
-- **Location Search**: Search for campus locations (e.g., "Memorial Union", "Bascom Hall")
+- **Radius Filter**: Filter parking reports based on a user-defined distance from current location on MapScreen
+- **Location Filter**: Filter reports by campus locations on MapScreen (e.g., Memorial Union, Bascom Hall)
 - Map automatically animates to searched location
 
 ### 👤 Profile & Statistics
@@ -86,6 +94,8 @@ npx expo start --tunnel
 - React Navigation
 - React Native Maps
 - Google Geocoding API
+- Expo Notifications
+- Expo Location (GPS)
 
 ## Team
 - Tejas Parasumanna  parasumanna@wisc.edu — tjass01
@@ -97,10 +107,13 @@ npx expo start --tunnel
 ```
 parkpal/
 ├── screens/
-│   ├── LoginScreen.js       # Login interface
-│   ├── SignupScreen.js      # Registration interface
-│   ├── MapScreen.js         # Main map with reports, filters, and search
-│   └── ProfileScreen.js     # User profile, statistics, and report history
+│   ├── LoginScreen.js          # User login interface
+│   ├── MapScreen.js            # Main map with reports, filters, and search
+│   ├── NotificationsScreen.js # Real-time filtered alerts with live distance and map navigation
+│   ├── AnalyticsScreen.js      # User analytics 
+│   ├── ReportScreen.js         # Create parking reports
+│   ├── ProfileScreen.js        # User profile, statistics, and report history
+│   └── SettingScreen.js        # App settings and preferences
 ├── firebaseConfig.js        # Firebase configuration
 ├── App.js                   # Navigation setup
 └── package.json             # Dependencies
