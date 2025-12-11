@@ -79,16 +79,6 @@ export default function ProfileScreen() {
         onChangeText={setLastName}
       />
 
-      <View style={styles.toggleRow}>
-        <Text style={styles.toggleLabel}>Notifications</Text>
-        <Switch
-          value={notificationsEnabled}
-          onValueChange={(value) => {
-            setNotificationsEnabled(value);
-            setEditing(true);
-          }}
-        />
-      </View>
 
       {editing && (
         <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
